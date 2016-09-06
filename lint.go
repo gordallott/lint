@@ -194,12 +194,9 @@ func (f *file) isTest() bool { return strings.HasSuffix(f.filename, "_test.go") 
 func (f *file) lint() {
 	f.lintPackageComment()
 	f.lintImports()
-	f.lintBlankImports()
 	f.lintExported()
 	f.lintNames()
 	f.lintVarDecls()
-	f.lintElses()
-	f.lintIfError()
 	f.lintRanges()
 	f.lintErrorf()
 	f.lintErrors()
@@ -425,38 +422,6 @@ func (f *file) lintPackageComment() {
 	// Only non-main packages need to keep to this form.
 	if !f.pkg.main && !strings.HasPrefix(s, prefix) {
 		f.errorf(f.f.Doc, 1, link(ref), category("comments"), `package comment should be of the form "%s..."`, prefix)
-	}
-}
-
-// lintBlankImports complains if a non-main package has blank imports that are
-// not documented.
-func (f *file) lintBlankImports() {
-	// In package main and in tests, we don't complain about blank imports.
-	if f.pkg.main || f.isTest() {
-		return
-	}
-
-	// The first element of each contiguous group of blank imports should have
-	// an explanatory comment of some kind.
-	for i, imp := range f.f.Imports {
-		pos := f.fset.Position(imp.Pos())
-
-		if !isBlank(imp.Name) {
-			continue // Ignore non-blank imports.
-		}
-		if i > 0 {
-			prev := f.f.Imports[i-1]
-			prevPos := f.fset.Position(prev.Pos())
-			if isBlank(prev.Name) && prevPos.Line+1 == pos.Line {
-				continue // A subsequent blank in a group.
-			}
-		}
-
-		// This is the first blank import of a group.
-		if imp.Doc == nil && imp.Comment == nil {
-			ref := ""
-			f.errorf(imp, 1, link(ref), category("imports"), "a blank import should be only in a main or test package, or have a comment justifying it")
-		}
 	}
 }
 
@@ -1025,50 +990,6 @@ func validType(T types.Type) bool {
 	return T != nil &&
 		T != types.Typ[types.Invalid] &&
 		!strings.Contains(T.String(), "invalid type") // good but not foolproof
-}
-
-// lintElses examines else blocks. It complains about any else block whose if block ends in a return.
-func (f *file) lintElses() {
-	// We don't want to flag if { } else if { } else { } constructions.
-	// They will appear as an IfStmt whose Else field is also an IfStmt.
-	// Record such a node so we ignore it when we visit it.
-	ignore := make(map[*ast.IfStmt]bool)
-
-	f.walk(func(node ast.Node) bool {
-		ifStmt, ok := node.(*ast.IfStmt)
-		if !ok || ifStmt.Else == nil {
-			return true
-		}
-		if ignore[ifStmt] {
-			return true
-		}
-		if elseif, ok := ifStmt.Else.(*ast.IfStmt); ok {
-			ignore[elseif] = true
-			return true
-		}
-		if _, ok := ifStmt.Else.(*ast.BlockStmt); !ok {
-			// only care about elses without conditions
-			return true
-		}
-		if len(ifStmt.Body.List) == 0 {
-			return true
-		}
-		shortDecl := false // does the if statement have a ":=" initialization statement?
-		if ifStmt.Init != nil {
-			if as, ok := ifStmt.Init.(*ast.AssignStmt); ok && as.Tok == token.DEFINE {
-				shortDecl = true
-			}
-		}
-		lastStmt := ifStmt.Body.List[len(ifStmt.Body.List)-1]
-		if _, ok := lastStmt.(*ast.ReturnStmt); ok {
-			extra := ""
-			if shortDecl {
-				extra = " (move short variable declaration to its own line if necessary)"
-			}
-			f.errorf(ifStmt.Else, 1, link(styleGuideBase+"#indent-error-flow"), category("indent"), "if block ends with a return statement, so drop this else and outdent its block"+extra)
-		}
-		return true
-	})
 }
 
 // lintRanges examines range clauses. It complains about redundant constructions.
