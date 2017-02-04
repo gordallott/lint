@@ -873,6 +873,8 @@ func (f *file) lintValueSpecDoc(vs *ast.ValueSpec, gd *ast.GenDecl, genDeclMissi
 }
 
 func (f *file) checkStutter(id *ast.Ident, thing string) {
+	return
+
 	pkg, name := f.f.Name.Name, id.Name
 	if !ast.IsExported(name) {
 		// unexported name
